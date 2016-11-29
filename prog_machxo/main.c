@@ -167,7 +167,8 @@ static void do_work(int op)
 					just_abort("Failed to verify user code.  Programming not completed.");
 			break;
 		case SECTION_END:
-			program_done() != 1 || wait_not_busy() != 1 || refresh() != 1 || wait_not_busy() != 1;
+			// don't do anything after refresh
+			program_done() != 1 || wait_not_busy() != 1 || refresh() != 1;
 			return;
 		case SECTION_NUM_PINS:
 		case SECTION_NUM_FUSES:

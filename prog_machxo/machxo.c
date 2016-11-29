@@ -446,5 +446,6 @@ int refresh()
 	DEBUG(fprintf(stderr, "Refresh device\n"));
 	if (dev_fd == -1)
 		return 1; // Debug mode
-	return send_receive(LSC_REFRESH, 0, DIRECTION_RECEIVE, 0, 0);
+	// just send the refresh command, don't try to read
+	return send_receive(LSC_REFRESH, 0, DIRECTION_SEND, 0, 0);
 }
