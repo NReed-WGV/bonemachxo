@@ -143,10 +143,9 @@ static void do_work(int op)
 			{
 				if (data_len != 10)
 					abort_and_clean_up("Incorrect size feature row and bits");
-				if (program_feature_row(data) != 1 || wait_not_busy() != 1)
+				if (program_feature_row(data) != 1)
 					abort_and_clean_up("Failed to program feature row");
-				if (program_feature_bits(data + 8) != 1 || wait_not_busy() != 1)
-					abort_and_clean_up("Failed to program feature bits");
+				usleep(200);
 			}
 			if (op & DO_VERIFY)
 			{
@@ -154,6 +153,15 @@ static void do_work(int op)
 					just_abort("Incorrect size feature row and bits");
 				if (verify_feature_row(data) != 1)
 					just_abort("Failed to verify feature row.  Programming not completed.");
+			}
+			if (op & DO_FLASH)
+			{
+				if (program_feature_bits(data + 8) != 1)
+					abort_and_clean_up("Failed to program feature bits");
+				usleep(200);
+			}
+			if (op & DO_VERIFY)
+			{
 				if (verify_feature_bits(data + 8) != 1)
 					just_abort("Failed to verify feature bits.  Programming not completed.");
 			}
