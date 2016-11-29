@@ -246,7 +246,7 @@ int main(int argc, char **argv)
 	}
 	if (open_jedec(argv[0]) != 1)
 		return 1;
-	if (open_device(0, mode, i2c_addr) != 1)
+	if (open_device(device_file, mode, i2c_addr) != 1)
 		return 1;
 	do_work(op);
   //initialize_flash();
