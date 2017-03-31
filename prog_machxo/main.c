@@ -11,9 +11,12 @@
 #include "machxo.h"
 #include "jedec.h"
 
-#define DO_ERASE 1
-#define DO_FLASH 2
-#define DO_VERIFY 4
+#define DO_ERASE 0x1
+#define DO_FLASH 0x2
+#define DO_VERIFY 0x4
+#define DO_IGNORE_DEVICE_ID 0x8
+#define DO_TRANSPARENT_MODE 0x10
+#define DO_SKIP_FEATURE_ROW 0x20
 
 static int all_zero(uint8_t *data, int data_len)
 {
@@ -58,14 +61,37 @@ static void do_work(int op)
 	if (get_next_jedec_section(&section, &address, &data, &data_len) != 1)
 		return;
 	// Initialize flash not that the JEDEC file looks OK
-	if (check_device_id_quick() != 1)
+	if (op & DO_TRANSPARENT_MODE)
+	{
+		if (enable_transparent_configuration() != 1 || wait_not_busy() != 1)
+		{
+			fprintf(stderr, "Failed to enable transparent configuration.\n");
+			exit(1);
+		}
+	}
+	else
+	{
+		if (enable_offline_configuration(0) != 1)
+		{
+			fprintf(stderr, "Error enabling offline configuration.  Workaround\n");
+			// try again, while ignoring NACKs, and the return value
+			enable_offline_configuration(IGNORE_NACK);
+			// this time should work
+			if (enable_offline_configuration(0) != 1)
+			{
+				fprintf(stderr, "Workaround failed to enable offline configuration\n");
+				exit(1);
+			}
+		}
+		if (wait_not_busy() != 1)
+		{
+			fprintf(stderr, "Failed to wait after offline configuration.\n");
+			exit(1);
+		}
+	}
+	if (((op & DO_IGNORE_DEVICE_ID) == 0) && check_device_id_quick() != 1)
 	{
 		fprintf(stderr, "Device ID doesn't make sense.  Exiting.\n");
-		exit(1);
-	}
-	if (enable_offline_configuration() != 1 || wait_not_busy() != 1)
-	{
-		fprintf(stderr, "Failed to enable configuration.\n");
 		exit(1);
 	}
 	if (op & DO_ERASE)
@@ -139,6 +165,11 @@ static void do_work(int op)
 			}
 			break;
 		case SECTION_ARCH:
+			if (op & DO_SKIP_FEATURE_ROW)
+			{
+				fprintf(stderr, "Skipping feature row programming.\n");
+				break;
+			}
 			if (op & DO_FLASH)
 			{
 				if (data_len != 10)
@@ -196,18 +227,25 @@ static void do_work(int op)
 static void print_usage(const char *prog)
 {
 	fprintf(stderr, "Usage: %s [-d <device>] [-a <i2c_addr>] <jedec file>\n", prog);
-	fputs("  -d   device to use (default /dev/spidev2.0)\n"
+	fputs("  -d   device to use (default /dev/i2c-1)\n"
 	      "  -a   i2c address\n"
 		  "  -e   Do not erase\n"
 		  "  -f   Do not flash\n"
-		  "  -v   Do not verify\n", stderr);
+		  "  -v   Do not verify\n"
+		  "  -i   Ignore device id\n"
+		  "  -t   Transparent mode\n"
+		  "  -s   Skip feature rows\n"
+		  "  -D   Enable verbose debugging\n", stderr);
+	DEBUG(fprintf(stderr, "Open device\n"));
 	exit(1);
 }
 
+extern int debug_enabled;
+
 int main(int argc, char **argv)
 {
-	char *device_file = DEFAULT_SPI_DEV;
-	int mode = MODE_SPI;
+	char *device_file = DEFAULT_I2C_DEV;
+	int mode = MODE_I2C;
 	int i2c_addr = 0x40;
 	int op = DO_ERASE | DO_FLASH | DO_VERIFY;
 	char *prog_name = "prog_machxo";
@@ -229,6 +267,7 @@ int main(int argc, char **argv)
 			if (argc < 3)
 				print_usage(prog_name);
 			i2c_addr = atoi(argv[1]);
+			fprintf(stderr, "Using I2C Addr %X\n", i2c_addr);
 			mode = MODE_I2C;
 			argv ++;
 			argc --;
@@ -239,6 +278,14 @@ int main(int argc, char **argv)
 			op &= ~DO_FLASH;
 		else if (argv[0][1] == 'v')
 			op &= ~DO_VERIFY;
+		else if (argv[0][1] == 'i')
+			op |= DO_IGNORE_DEVICE_ID;
+		else if (argv[0][1] == 's')
+			op |= DO_SKIP_FEATURE_ROW;
+		else if (argv[0][1] == 't')
+			op |= DO_TRANSPARENT_MODE;
+		else if (argv[0][1] == 'D')
+			debug_enabled = 1;
 		else
 			print_usage(prog_name);
 		argv ++;

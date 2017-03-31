@@ -45,8 +45,10 @@
 
 #define DIRECTION_SEND 0
 #define DIRECTION_RECEIVE 1
+#define IGNORE_NACK 2
 
 #define DEFAULT_SPI_DEV "/dev/spidev2.0"
+#define DEFAULT_I2C_DEV "/dev/i2c-1"
 
 #define MACHXO2_PAGE_SIZE 16
 #define MODE_SPI 0
@@ -55,7 +57,8 @@
 int open_device(char *dev_name, int mode, int addr);
 int check_device_id_quick();
 int check_device_id(uint32_t expected_id);
-int enable_offline_configuration();
+int enable_offline_configuration(int additionalFlags);
+int enable_transparent_configuration();
 int read_status_register();
 int wait_not_busy();
 int erase_flash();
@@ -71,5 +74,8 @@ int program_feature_bits(uint8_t *feature_bits);
 int verify_feature_bits(uint8_t *expected_feature_bits);
 int program_done();
 int refresh();
+
+int debug_enabled;
+#define DEBUG(x) do { if (debug_enabled) x; } while (0)
 
 #endif

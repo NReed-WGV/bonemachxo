@@ -36,11 +36,10 @@ static struct spi_ioc_transfer spi_xfer[3];
 static struct i2c_rdwr_ioctl_data i2c_packets;
 static struct i2c_msg i2c_messages[2];
 
-//#define DEBUG(x) (x)
-#define DEBUG(x)
-#define DEBUG2 0
+int debug_enabled = 0;
 
-static int send_receive(uint8_t command, uint32_t operand, int direction, uint8_t *data, int data_len)
+
+static int send_receive(uint8_t command, uint32_t operand, int flags, uint8_t *data, int data_len)
 {
 	uint8_t cmd_buffer[4];
 	int status;
@@ -50,6 +49,9 @@ static int send_receive(uint8_t command, uint32_t operand, int direction, uint8_
 	int oplen = 4;
 	if (dev_fd == -1)
 		return 1; // Debug mode
+	int direction = flags & DIRECTION_RECEIVE;
+	int i2c_flags = (flags & IGNORE_NACK) ? I2C_M_IGNORE_NAK : 0;
+
 	memset(spi_xfer, 0 , sizeof spi_xfer);
 	memset(&i2c_packets, 0, sizeof i2c_packets);
 	memset(i2c_messages, 0, sizeof i2c_messages);
@@ -74,19 +76,20 @@ static int send_receive(uint8_t command, uint32_t operand, int direction, uint8_
 		fprintf(stderr, "Incorrect data length %d\n", data_len);
 		return 0;
 	}
-#if DEBUG2
-	fprintf(stderr, "send_receive: %02x %02x %02x", cmd_buffer[0], cmd_buffer[1], cmd_buffer[2]);
-	if (oplen == 4)
-		fprintf(stderr, " %02x", cmd_buffer[3]);
-	if (direction == DIRECTION_SEND)
+	if (debug_enabled)
 	{
-		int j;
-		fprintf(stderr, " ->");
-		for (j = 0; j < data_len; j++)
-			fprintf(stderr, " %02x", data[j]);
-		fprintf(stderr, "\n");
+		fprintf(stderr, "send_receive: %02x %02x %02x", cmd_buffer[0], cmd_buffer[1], cmd_buffer[2]);
+		if (oplen == 4)
+			fprintf(stderr, " %02x", cmd_buffer[3]);
+		if (direction == DIRECTION_SEND)
+		{
+			int j;
+			fprintf(stderr, " ->");
+			for (j = 0; j < data_len; j++)
+				fprintf(stderr, " %02x", data[j]);
+			fprintf(stderr, "\n");
+		}
 	}
-#endif
 	if (mode == MODE_SPI)
 	{
 		spi_xfer[0].tx_buf = (unsigned long)cmd_buffer;
@@ -107,30 +110,36 @@ static int send_receive(uint8_t command, uint32_t operand, int direction, uint8_
 	else if (mode == MODE_I2C)
 	{
 		i2c_messages[0].addr = i2c_addr;
-		i2c_messages[0].flags = 0;
+		i2c_messages[0].flags = i2c_flags;
 		i2c_messages[0].buf = cmd_buffer;
-		i2c_messages[0].len = command == ISC_ENABLE ? 3 : 4;
+		i2c_messages[0].len = (command == ISC_ENABLE || command == ISC_ENABLE_X) ? 3 : 4;
 		if (data != 0)
 		{
 			i2c_messages[1].addr = i2c_addr;
-			i2c_messages[1].flags = direction == DIRECTION_SEND ? 0 : I2C_M_RD;
+			i2c_messages[1].flags = direction == DIRECTION_SEND ? i2c_flags : (I2C_M_RD | i2c_flags);
 			i2c_messages[1].buf = data;
 			i2c_messages[1].len = data_len;
 		}
 		i2c_packets.msgs = i2c_messages;
 		i2c_packets.nmsgs = num_xfers;
 		status = ioctl(dev_fd, I2C_RDWR, &i2c_packets);
+		if (command ==  LSC_REFRESH)
+		{
+			// it is expected that the device will stop responding here
+			status = 0;
+		}
 	}
-#if DEBUG2
-	if (direction != DIRECTION_SEND)
+	if (debug_enabled)
 	{
-		int j;
-		fprintf(stderr, " <-");
-		for (j = 0; j < data_len; j++)
-			fprintf(stderr, " %02x", data[j]);
-		fprintf(stderr, "\n");
+		if (direction != DIRECTION_SEND)
+		{
+			int j;
+			fprintf(stderr, " <-");
+			for (j = 0; j < data_len; j++)
+				fprintf(stderr, " %02x", data[j]);
+			fprintf(stderr, "\n");
+		}
 	}
-#endif
 	if (status < 0)
 		perror("message");
 	return status >= 0;
@@ -254,12 +263,21 @@ int erase_flash()
 	return status;
 }
 
-int enable_offline_configuration()
+int enable_offline_configuration(int additionalFlags)
 {
 	DEBUG(fprintf(stderr, "Enable offline configuration\n"));
 	if (dev_fd == -1)
 		return 1; // Debug mode
-	return send_receive(ISC_ENABLE, 0x080000, DIRECTION_RECEIVE, 0, 0); /* TODO: special command for i2c */
+	return send_receive(ISC_ENABLE, 0x080000,
+			DIRECTION_RECEIVE | additionalFlags, 0, 0); /* TODO: special command for i2c */
+}
+
+int enable_transparent_configuration()
+{
+	DEBUG(fprintf(stderr, "Enable transparent configuration\n"));
+	if (dev_fd == -1)
+		return 1; // Debug mode
+	return send_receive(ISC_ENABLE_X, 0x080000, DIRECTION_RECEIVE, 0, 0); /* TODO: special command for i2c */
 }
 
 int erase_user_flash()
